@@ -1,6 +1,7 @@
 (ns elmer.core
   (:require [elmer.store :as store])
-  (:require [clojure.tools.logging :as log])
+  (:require [clojure.tools.logging :as log]
+            [clojure.stacktrace :as s])
   (:use [clojure.string :only [replace-first]]
         [compojure.core :only [defroutes GET POST ANY]]
         [elmer.config]
@@ -50,7 +51,8 @@
         {:status 401
          :body (format "unauthorized: %s\n" paste)})
       (catch Exception e
-        (log/error (type e) (.getMessage e))
+        (log/error (with-out-str
+                     (s/print-stack-trace e)))
         {:status 500
          :body (format "FAIL %s\n" paste)}))))
 
