@@ -2,7 +2,7 @@
   :description "Awesome!!!11"
   :exclusions #{org.codehaus.jackson/jackson-core-asl}
   :dependencies [
-                 [clj-aws-s3 "0.3.2"]
+                 [props3t "0.0.3"]
                  [commons-io "2.4"]
                  [compojure "0.6.4"]
                  [enlive "1.0.0" :exclusions [org.clojure/clojure]]

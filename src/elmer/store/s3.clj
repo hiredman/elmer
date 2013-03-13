@@ -1,6 +1,8 @@
 (ns elmer.store.s3
   (:require [clojure.tools.logging :as log]
-            [aws.sdk.s3 :as s3])
+            [propS3t.core :as s3]
+            [clojure.java.io :as io]
+            [clojure.set :as set])
   (:use [elmer.store :only [PasteStore]])
   (:import (org.apache.commons.io.input CountingInputStream)))
 
@@ -15,20 +17,36 @@
   (format "%s/%s.key" key-root name))
 
 (defn store-key [loc key-root name key]
-  (s3/put-object (:creds loc)
-                 (:bucket loc)
-                 (key-path key-root name)
-                 key
-                 {:content-type "text/plain"}))
+  (s3/write-stream
+   (set/rename-keys (:creds loc)
+                    {:access-key :aws-key
+                     :secret-key :aws-secret-key})
+   (:bucket loc)
+   (key-path key-root name)
+   (.getBytes key)))
 
 (defn get-key [loc key-root name]
   (slurp
-   (:content (s3/get-object (:creds loc) (:bucket loc)
-                            (key-path key-root name)))))
+   (s3/read-stream
+    (set/rename-keys (:creds loc)
+                     {:access-key :aws-key
+                      :secret-key :aws-secret-key})
+    (:bucket loc)
+    (key-path key-root name))))
 
 (defn key-exists? [loc key-root name]
-  (s3/object-exists? (:creds loc) (:bucket loc)
-                     (key-path key-root name)))
+  (try
+    (slurp
+     (s3/read-stream
+      (set/rename-keys (:creds loc)
+                       {:access-key :aws-key
+                        :secret-key :aws-secret-key})
+      (:bucket loc)
+      (key-path key-root name)))
+    true
+    (catch Throwable t
+      (log/debug t)
+      false)))
 
 (defn key-valid? [loc key-root name key]
   (= key (get-key loc key-root name)))
@@ -43,18 +61,31 @@
 (defn get* [loc pre name]
   (log/debug 'get* name)
   (slurp
-   (:content
-    (s3/get-object (:creds loc) (:bucket loc) (format "%s/%s" pre name)))))
+   (s3/read-stream
+    (set/rename-keys (:creds loc)
+                     {:access-key :aws-key
+                      :secret-key :aws-secret-key})
+    (:bucket loc)
+    (format "%s/%s" pre name))))
 
 (defn put* [loc root key-root name key is]
-  (let [f (format "%s/%s" root name)]
+  (let [f (format "%s/%s" root name)
+        file (java.io.File/createTempFile "ppppp" "sssss")]
     (when (authorized?* loc root key-root name key)
-      (let [cis (CountingInputStream. is)]
-        (store-key loc key-root name key)
-        (log/debug "store" (abs-path loc root name))
-        (s3/put-object (:creds loc) (:bucket loc)
-                       (format "%s/%s" root name) cis)
-        (.getByteCount cis)))))
+      (io/copy is file)
+      (store-key loc key-root name key)
+      (log/debug "store" (abs-path loc root name))
+      (s3/write-stream
+       (set/rename-keys (:creds loc)
+                        {:access-key :aws-key
+                         :secret-key :aws-secret-key})
+       (:bucket loc)
+       (format "%s/%s" root name)
+       (io/input-stream file)
+       :length (.length file))
+      (let [x (.length file)]
+        (.delete file)
+        x))))
 
 (deftype S3Store [loc root key-root]
   PasteStore
